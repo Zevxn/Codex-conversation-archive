@@ -11,6 +11,7 @@ import os
 import re
 import secrets
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -610,6 +611,12 @@ def purge_trash_item(archive_directory: Path, deletion_id: str) -> dict[str, obj
 class ViewerRequestHandler(SimpleHTTPRequestHandler):
     """只提供 viewer 目录，并为本地页面附加安全响应头。"""
 
+    def log_message(self, format: str, *args: object) -> None:
+        """在 pythonw 无控制台模式下跳过默认的 stderr 访问日志。"""
+        if sys.stderr is None:
+            return
+        super().log_message(format, *args)
+
     def do_GET(self) -> None:
         if urlsplit(self.path).path == "/api/configured-archive":
             self.send_configured_archive()
@@ -854,7 +861,7 @@ class ViewerRequestHandler(SimpleHTTPRequestHandler):
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="启动 Codex 对话档案本地查看面板")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址，默认 127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765, help="监听端口，默认 8765；使用 0 可自动选择")
+    parser.add_argument("--port", type=int, default=18765, help="监听端口，默认 18765；使用 0 可自动选择")
     parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
     return parser.parse_args()
 

@@ -27,7 +27,7 @@ python conversation_viewer.py
 默认地址为：
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:18765/
 ```
 
 程序会尝试自动打开浏览器。只启动服务而不打开浏览器：
@@ -39,7 +39,7 @@ python conversation_viewer.py --no-browser
 端口被占用时，可以指定其他端口：
 
 ```powershell
-python conversation_viewer.py --port 8766
+python conversation_viewer.py --port 18766
 ```
 
 ## 读取记录

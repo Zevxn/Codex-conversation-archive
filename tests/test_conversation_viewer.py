@@ -7,6 +7,7 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -21,6 +22,11 @@ class ConversationDeletionTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
+
+    def test_request_logging_tolerates_pythonw_without_stderr(self) -> None:
+        handler = object.__new__(viewer.ViewerRequestHandler)
+        with mock.patch.object(viewer.sys, "stderr", None):
+            handler.log_message("%s", "request")
 
     def _write_json(self, name: str, document: object) -> None:
         (self.archive_directory / name).write_text(

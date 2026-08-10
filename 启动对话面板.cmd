@@ -8,7 +8,7 @@ if errorlevel 1 goto use_py_launcher
 python --version >nul 2>nul
 if errorlevel 1 goto use_py_launcher
 
-python conversation_viewer.py
+python conversation_viewer.py --port 18765
 if errorlevel 1 pause
 goto end
 
@@ -16,7 +16,7 @@ goto end
 where py >nul 2>nul
 if errorlevel 1 goto python_missing
 
-py -3 conversation_viewer.py
+py -3 conversation_viewer.py --port 18765
 if errorlevel 1 pause
 goto end
 
