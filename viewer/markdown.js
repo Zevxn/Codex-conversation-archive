@@ -173,6 +173,47 @@
     textarea.remove();
   }
 
+  function enhanceMathBlocks(container) {
+    for (const block of container.querySelectorAll(".katex-display")) {
+      const annotation = block.querySelector('annotation[encoding="application/x-tex"]');
+      const latex = annotation?.textContent || "";
+      if (!latex || block.dataset.copyLatexEnhanced === "true") continue;
+
+      block.dataset.copyLatexEnhanced = "true";
+      block.setAttribute("role", "button");
+      block.setAttribute("tabindex", "0");
+      block.setAttribute("aria-label", "点击复制 LaTeX 公式");
+      block.title = "点击复制 LaTeX";
+
+      const copyLatex = async () => {
+        try {
+          await copyText(latex);
+          window.ArchiveApp?.showToast?.("公式复制成功");
+          block.dataset.copyStatus = "copied";
+          block.title = "已复制 LaTeX";
+          window.setTimeout(() => {
+            delete block.dataset.copyStatus;
+            block.title = "点击复制 LaTeX";
+          }, 1200);
+        } catch {
+          block.dataset.copyStatus = "failed";
+          block.title = "复制 LaTeX 失败";
+          window.setTimeout(() => {
+            delete block.dataset.copyStatus;
+            block.title = "点击复制 LaTeX";
+          }, 1200);
+        }
+      };
+
+      block.addEventListener("click", copyLatex);
+      block.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        copyLatex();
+      });
+    }
+  }
+
   function enhanceCodeBlocks(container) {
     for (const code of container.querySelectorAll("pre > code")) {
       if (code.closest(".code-block")) continue;
@@ -254,6 +295,7 @@
       }
     }
 
+    enhanceMathBlocks(container);
     await renderMermaidBlocks(container);
     enhanceCodeBlocks(container);
   }

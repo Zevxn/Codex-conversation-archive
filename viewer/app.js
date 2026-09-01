@@ -1606,6 +1606,9 @@
     toastTimer = window.setTimeout(() => { dom.toast.hidden = true; }, 1800);
   }
 
+  window.ArchiveApp = window.ArchiveApp || {};
+  window.ArchiveApp.showToast = showToast;
+
   function setBusy(busy, message = "") {
     dom.openDirectoryButton.disabled = busy;
     dom.openFilesButton.disabled = busy;

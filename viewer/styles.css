@@ -1528,7 +1528,15 @@ a:focus-visible,
 .markdown-body .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 8px 2px;
+  padding: 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.markdown-body .katex-display:hover,
+.markdown-body .katex-display:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .mermaid-block {
@@ -1568,15 +1576,21 @@ a:focus-visible,
 .toast {
   position: fixed;
   z-index: 300;
-  right: 24px;
-  bottom: 24px;
-  padding: 10px 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  color: var(--text);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow);
+  top: 24px;
+  left: 50%;
+  min-width: 180px;
+  max-width: calc(100vw - 32px);
+  padding: 11px 18px;
+  border: 1px solid var(--text);
+  border-radius: 12px;
+  color: var(--surface-raised);
+  background: var(--text);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
   font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+  text-align: center;
+  transform: translateX(-50%);
 }
 
 .delete-dialog {
