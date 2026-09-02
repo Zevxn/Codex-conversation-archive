@@ -217,6 +217,7 @@
   function enhanceCodeBlocks(container) {
     for (const code of container.querySelectorAll("pre > code")) {
       if (code.closest(".code-block")) continue;
+      const source = code.textContent || "";
       if (typeof hljs !== "undefined") {
         try {
           hljs.highlightElement(code);
@@ -228,11 +229,13 @@
       const pre = code.parentElement;
       const wrapper = document.createElement("div");
       wrapper.className = "code-block";
+      wrapper.dataset.mdSource = source;
       const toolbar = document.createElement("div");
       toolbar.className = "code-block-toolbar";
       const language = Array.from(code.classList)
         .find((name) => name.startsWith("language-"))
         ?.slice("language-".length) || "text";
+      wrapper.dataset.mdLanguage = language;
       const label = document.createElement("span");
       label.textContent = language;
       const button = document.createElement("button");
@@ -261,6 +264,7 @@
       const pre = code.parentElement;
       const target = document.createElement("div");
       target.className = "mermaid-block";
+      target.dataset.mdSource = code.textContent || "";
       pre.replaceWith(target);
       try {
         const id = `archive-mermaid-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
