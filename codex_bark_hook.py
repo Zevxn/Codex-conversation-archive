@@ -1,3 +1,5 @@
+# SECTION: 模块导入与运行配置
+
 from __future__ import annotations
 
 import json
@@ -19,9 +21,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / "config.local.json"
 LOG_FILE = SCRIPT_DIR / "codex_bark_hook.log"
 
-# ---------------------------------------------------------------------------
-# 默认配置区
-# ---------------------------------------------------------------------------
 # 运行时优先使用 config.local.json 中的值；未配置的字段使用下面的默认值。
 
 # Bark App 中复制的完整推送地址。
@@ -45,6 +44,9 @@ MAX_BODY_LENGTH = 1500
 # Bark 通知中最多保留多少字符的用户问题。
 MAX_PROMPT_IN_NOTIFICATION = 500
 
+# 仅当任务耗时严格超过此秒数时才发送 Bark 通知。
+MIN_NOTIFICATION_DURATION_SECONDS = 60.0
+
 # 根据首条问题生成的本地对话名称最大长度。
 CONVERSATION_TITLE_MAX_LENGTH = 36
 
@@ -52,6 +54,9 @@ CONVERSATION_TITLE_MAX_LENGTH = 36
 LOCK_TIMEOUT_SECONDS = 15.0
 LOCK_POLL_INTERVAL_SECONDS = 0.1
 STALE_LOCK_SECONDS = 120.0
+
+# 自定义通知声音。
+NOTBARK_NOTIFICATION_SOUND = "telegraph"
 
 # 忽略 Codex 启动阶段产生的内部 JSON 响应。
 # 当回答是 {"exclude": [...]} 或 {"suggestions": [...]} 时，
@@ -66,6 +71,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "history_dir": str(HISTORY_DIR),
     "max_body_length": MAX_BODY_LENGTH,
     "max_prompt_in_notification": MAX_PROMPT_IN_NOTIFICATION,
+    "min_notification_duration_seconds": MIN_NOTIFICATION_DURATION_SECONDS,
     "conversation_title_max_length": CONVERSATION_TITLE_MAX_LENGTH,
     "lock_timeout_seconds": LOCK_TIMEOUT_SECONDS,
     "lock_poll_interval_seconds": LOCK_POLL_INTERVAL_SECONDS,
@@ -108,6 +114,9 @@ def load_configuration(config_path: Path = CONFIG_FILE) -> dict[str, Any]:
         "lock_poll_interval_seconds",
         "stale_lock_seconds",
     }
+    non_negative_number_keys = {
+        "min_notification_duration_seconds",
+    }
 
     for key, value in local_config.items():
         if key in boolean_keys and not isinstance(value, bool):
@@ -122,6 +131,12 @@ def load_configuration(config_path: Path = CONFIG_FILE) -> dict[str, Any]:
             or value <= 0
         ):
             raise TypeError(f"配置项 {key} 必须是正数。")
+        if key in non_negative_number_keys and (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or value < 0
+        ):
+            raise TypeError(f"配置项 {key} 必须是非负数。")
         if key in {"bark_url", "history_dir"} and (
             not isinstance(value, str) or not value.strip()
         ):
@@ -156,6 +171,9 @@ if not HISTORY_DIR.is_absolute():
     HISTORY_DIR = SCRIPT_DIR / HISTORY_DIR
 MAX_BODY_LENGTH = int(_CONFIG["max_body_length"])
 MAX_PROMPT_IN_NOTIFICATION = int(_CONFIG["max_prompt_in_notification"])
+MIN_NOTIFICATION_DURATION_SECONDS = float(
+    _CONFIG["min_notification_duration_seconds"]
+)
 CONVERSATION_TITLE_MAX_LENGTH = int(_CONFIG["conversation_title_max_length"])
 LOCK_TIMEOUT_SECONDS = float(_CONFIG["lock_timeout_seconds"])
 LOCK_POLL_INTERVAL_SECONDS = float(_CONFIG["lock_poll_interval_seconds"])
@@ -168,9 +186,8 @@ CACHE_DIR = HISTORY_DIR / ".prompt_cache"
 LOCK_DIR = HISTORY_DIR / ".locks"
 CONVERSATION_INDEX_PATH = HISTORY_DIR / "Codex对话索引.json"
 
-# ---------------------------------------------------------------------------
-# 通用工具
-# ---------------------------------------------------------------------------
+# !SECTION: 模块导入与运行配置
+# SECTION: 通用工具与事件数据解析
 
 def now_local() -> datetime:
     """返回带本地时区的当前时间。"""
@@ -537,6 +554,11 @@ def cache_file_for_event(event: dict[str, Any]) -> Path:
     return CACHE_DIR / f"{session_id}__{turn_id}.json"
 
 
+# !SECTION: 通用工具与事件数据解析
+
+# SECTION: JSON 原子写入与并发控制
+
+
 def atomic_write_json(path: Path, data: Any) -> None:
     """先写临时文件再原子替换，避免中途损坏正式 JSON。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -602,9 +624,8 @@ def exclusive_file_lock(lock_path: Path) -> Iterator[None]:
             pass
 
 
-# ---------------------------------------------------------------------------
-# 提问缓存、对话名称与月度归档
-# ---------------------------------------------------------------------------
+# !SECTION: JSON 原子写入与并发控制
+# SECTION: 对话缓存、标题与月度归档
 
 def generate_conversation_title(prompt: str) -> str:
     """根据该对话第一次提交的问题生成稳定的本地对话名称。"""
@@ -898,9 +919,8 @@ def append_monthly_history(
     return history_path
 
 
-# ---------------------------------------------------------------------------
-# Bark 通知
-# ---------------------------------------------------------------------------
+# !SECTION: 对话缓存、标题与月度归档
+# SECTION: Bark 通知构建与发送
 
 def validate_bark_url() -> None:
     url = BARK_URL.strip()
@@ -914,6 +934,32 @@ def validate_bark_url() -> None:
         raise ValueError("请在脚本顶部的 BARK_URL 中填写真实 Bark 设备地址。")
 
 
+def should_send_bark_notification(record: dict[str, Any]) -> bool:
+    """仅在本轮耗时严格超过配置阈值时发送 Bark 通知。"""
+    if MIN_NOTIFICATION_DURATION_SECONDS <= 0:
+        return True
+
+    duration = record.get("duration_seconds")
+    if not isinstance(duration, (int, float)) or isinstance(duration, bool):
+        write_log(
+            "WARNING",
+            "无法计算本轮任务耗时，已按阈值规则跳过 Bark 通知。"
+            f"threshold={MIN_NOTIFICATION_DURATION_SECONDS:g}s",
+        )
+        return False
+
+    if duration <= MIN_NOTIFICATION_DURATION_SECONDS:
+        write_log(
+            "INFO",
+            "本轮任务耗时未超过 Bark 通知阈值，跳过手机推送："
+            f"duration={duration:g}s；"
+            f"threshold={MIN_NOTIFICATION_DURATION_SECONDS:g}s",
+        )
+        return False
+
+    return True
+
+
 def send_bark(title: str, body: str) -> None:
     validate_bark_url()
 
@@ -921,7 +967,7 @@ def send_bark(title: str, body: str) -> None:
         "title": title,
         "body": body,
         "group": "Codex",
-        "sound": "glass",
+        "sound": NOTBARK_NOTIFICATION_SOUND,
         "level": "active",
     }
 
@@ -986,9 +1032,8 @@ def build_bark_body(record: dict[str, Any], response_time: datetime) -> str:
     return prefix + answer_for_notification
 
 
-# ---------------------------------------------------------------------------
-# 两类钩子事件
-# ---------------------------------------------------------------------------
+# !SECTION: Bark 通知构建与发送
+# SECTION: Codex 钩子事件处理
 
 def any_output_enabled() -> bool:
     """只要通知或永久归档任一开启，就需要保存本轮问题缓存。"""
@@ -1096,7 +1141,7 @@ def handle_stop(event: dict[str, Any]) -> int:
     else:
         write_log("INFO", "本地对话记录已关闭，跳过月度 JSON 写入。")
 
-    if ENABLE_BARK_NOTIFICATION:
+    if ENABLE_BARK_NOTIFICATION and should_send_bark_notification(record):
         try:
             short_title = truncate_text(
                 clean_single_line(record.get("conversation_title")) or "未命名对话",
@@ -1114,6 +1159,8 @@ def handle_stop(event: dict[str, Any]) -> int:
             errors.append(error_message)
             enabled_operations_succeeded = False
             write_log("ERROR", error_message)
+    elif ENABLE_BARK_NOTIFICATION:
+        write_log("INFO", "本轮任务未达到 Bark 通知阈值，跳过手机推送。")
     else:
         write_log("INFO", "Bark 通知已关闭，跳过手机推送。")
 
@@ -1146,9 +1193,8 @@ def handle_stop(event: dict[str, Any]) -> int:
     return 0
 
 
-# ---------------------------------------------------------------------------
-# 手动测试
-# ---------------------------------------------------------------------------
+# !SECTION: Codex 钩子事件处理
+# SECTION: 测试模式与程序入口
 
 def run_test_mode() -> int:
     """测试 Bark 的换行、问题和回答显示。"""
@@ -1296,3 +1342,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# !SECTION: 测试模式与程序入口

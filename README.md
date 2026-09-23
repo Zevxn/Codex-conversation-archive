@@ -314,6 +314,7 @@ session_id
 | `history_dir` | `~/CodexConversationArchive` | 本地归档目录 |
 | `max_body_length` | `1500` | Bark 正文最大字符数 |
 | `max_prompt_in_notification` | `500` | Bark 中问题最大字符数 |
+| `min_notification_duration_seconds` | `60.0` | 仅任务耗时严格超过该秒数时发送 Bark 通知；设为 `0` 表示不启用阈值 |
 | `conversation_title_max_length` | `36` | 本地对话名称最大长度 |
 | `lock_timeout_seconds` | `15.0` | 等待文件锁的最长时间 |
 | `lock_poll_interval_seconds` | `0.1` | 文件锁轮询间隔 |

@@ -6,6 +6,7 @@
   "history_dir": "~/CodexConversationArchive",
   "max_body_length": 1500,
   "max_prompt_in_notification": 500,
+  "min_notification_duration_seconds": 60.0,
   "conversation_title_max_length": 36,
   "lock_timeout_seconds": 15.0,
   "lock_poll_interval_seconds": 0.1,
