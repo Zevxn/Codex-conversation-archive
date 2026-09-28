@@ -838,7 +838,7 @@
 
   function selectProject(key) {
     state.selectedProject = key;
-    state.selectedDate = mostRecentActiveDate(getFilteredRecords(), state.selectedYear);
+    state.selectedDate = "all";
     dom.allProjectsButton.classList.toggle("active", key === "all");
     for (const item of dom.projectList.querySelectorAll(".project-item")) {
       item.classList.toggle("active", item.dataset.projectKey === key);

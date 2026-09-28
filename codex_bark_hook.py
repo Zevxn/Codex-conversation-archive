@@ -47,6 +47,10 @@ MAX_PROMPT_IN_NOTIFICATION = 500
 # 仅当任务耗时严格超过此秒数时才发送 Bark 通知。
 MIN_NOTIFICATION_DURATION_SECONDS = 60.0
 
+# 每天不发送 Bark 通知的本地时间段；两个值都为空时不启用。
+NOTIFICATION_QUIET_START_TIME = ""
+NOTIFICATION_QUIET_END_TIME = ""
+
 # 根据首条问题生成的本地对话名称最大长度。
 CONVERSATION_TITLE_MAX_LENGTH = 36
 
@@ -72,6 +76,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_body_length": MAX_BODY_LENGTH,
     "max_prompt_in_notification": MAX_PROMPT_IN_NOTIFICATION,
     "min_notification_duration_seconds": MIN_NOTIFICATION_DURATION_SECONDS,
+    "notification_quiet_start_time": NOTIFICATION_QUIET_START_TIME,
+    "notification_quiet_end_time": NOTIFICATION_QUIET_END_TIME,
     "conversation_title_max_length": CONVERSATION_TITLE_MAX_LENGTH,
     "lock_timeout_seconds": LOCK_TIMEOUT_SECONDS,
     "lock_poll_interval_seconds": LOCK_POLL_INTERVAL_SECONDS,
@@ -141,6 +147,11 @@ def load_configuration(config_path: Path = CONFIG_FILE) -> dict[str, Any]:
             not isinstance(value, str) or not value.strip()
         ):
             raise TypeError(f"配置项 {key} 必须是非空字符串。")
+        if key in {"notification_quiet_start_time", "notification_quiet_end_time"} and (
+            not isinstance(value, str)
+            or (value != "" and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value))
+        ):
+            raise ValueError(f"配置项 {key} 必须为空字符串或 HH:MM 格式的本地时间。")
         if key == "ignored_internal_response_keys" and (
             not isinstance(value, list)
             or not all(isinstance(item, str) and item for item in value)
@@ -151,6 +162,13 @@ def load_configuration(config_path: Path = CONFIG_FILE) -> dict[str, Any]:
             )
 
         config[key] = value
+
+    start = config["notification_quiet_start_time"]
+    end = config["notification_quiet_end_time"]
+    if bool(start) != bool(end):
+        raise ValueError("禁通知时间段必须同时设置开始和结束时间。")
+    if start and start == end:
+        raise ValueError("禁通知时间段的开始和结束时间不能相同。")
 
     return config
 
@@ -174,6 +192,8 @@ MAX_PROMPT_IN_NOTIFICATION = int(_CONFIG["max_prompt_in_notification"])
 MIN_NOTIFICATION_DURATION_SECONDS = float(
     _CONFIG["min_notification_duration_seconds"]
 )
+NOTIFICATION_QUIET_START_TIME = str(_CONFIG["notification_quiet_start_time"])
+NOTIFICATION_QUIET_END_TIME = str(_CONFIG["notification_quiet_end_time"])
 CONVERSATION_TITLE_MAX_LENGTH = int(_CONFIG["conversation_title_max_length"])
 LOCK_TIMEOUT_SECONDS = float(_CONFIG["lock_timeout_seconds"])
 LOCK_POLL_INTERVAL_SECONDS = float(_CONFIG["lock_poll_interval_seconds"])
@@ -934,8 +954,31 @@ def validate_bark_url() -> None:
         raise ValueError("请在脚本顶部的 BARK_URL 中填写真实 Bark 设备地址。")
 
 
-def should_send_bark_notification(record: dict[str, Any]) -> bool:
-    """仅在本轮耗时严格超过配置阈值时发送 Bark 通知。"""
+def is_notification_quiet_time(at_time: datetime) -> bool:
+    """判断本地时间是否处于每日禁通知区间，允许区间跨午夜。"""
+    if not NOTIFICATION_QUIET_START_TIME:
+        return False
+
+    start_hour, start_minute = map(int, NOTIFICATION_QUIET_START_TIME.split(":"))
+    end_hour, end_minute = map(int, NOTIFICATION_QUIET_END_TIME.split(":"))
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    current = at_time.hour * 60 + at_time.minute
+    if start < end:
+        return start <= current < end
+    return current >= start or current < end
+
+
+def should_send_bark_notification(record: dict[str, Any], response_time: datetime) -> bool:
+    """仅在禁通知时间之外且本轮耗时超过阈值时发送 Bark 通知。"""
+    if is_notification_quiet_time(response_time):
+        write_log(
+            "INFO",
+            "当前处于 Bark 禁通知时间段，跳过手机推送："
+            f"{NOTIFICATION_QUIET_START_TIME}–{NOTIFICATION_QUIET_END_TIME}",
+        )
+        return False
+
     if MIN_NOTIFICATION_DURATION_SECONDS <= 0:
         return True
 
@@ -1141,7 +1184,7 @@ def handle_stop(event: dict[str, Any]) -> int:
     else:
         write_log("INFO", "本地对话记录已关闭，跳过月度 JSON 写入。")
 
-    if ENABLE_BARK_NOTIFICATION and should_send_bark_notification(record):
+    if ENABLE_BARK_NOTIFICATION and should_send_bark_notification(record, response_time):
         try:
             short_title = truncate_text(
                 clean_single_line(record.get("conversation_title")) or "未命名对话",
@@ -1159,9 +1202,7 @@ def handle_stop(event: dict[str, Any]) -> int:
             errors.append(error_message)
             enabled_operations_succeeded = False
             write_log("ERROR", error_message)
-    elif ENABLE_BARK_NOTIFICATION:
-        write_log("INFO", "本轮任务未达到 Bark 通知阈值，跳过手机推送。")
-    else:
+    elif not ENABLE_BARK_NOTIFICATION:
         write_log("INFO", "Bark 通知已关闭，跳过手机推送。")
 
     # 所有已开启的输出都成功后，删除本轮临时问题缓存。
@@ -1212,6 +1253,10 @@ def run_test_mode() -> int:
 
     try:
         test_time = now_local()
+        if is_notification_quiet_time(test_time):
+            write_log("INFO", "当前处于 Bark 禁通知时间段，跳过手动通知测试。")
+            emit_hook_result({"systemMessage": "当前处于禁通知时间段，Bark 测试通知未发送。"})
+            return 0
         record = {
             "project": "TestProject",
             "conversation_title": "Bark 通知测试对话",

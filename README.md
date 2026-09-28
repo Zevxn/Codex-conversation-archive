@@ -121,6 +121,8 @@ config.local.json
   "history_dir": "~/CodexConversationArchive",
   "max_body_length": 1500,
   "max_prompt_in_notification": 500,
+  "notification_quiet_start_time": "00:30",
+  "notification_quiet_end_time": "08:00",
   "conversation_title_max_length": 36,
   "lock_timeout_seconds": 15.0,
   "lock_poll_interval_seconds": 0.1,
@@ -136,6 +138,8 @@ Windows 自定义目录建议使用正斜杠：
 ```
 
 `config.local.json` 已在 `.gitignore` 中忽略，真实 Bark Key 不会被 Git 跟踪。
+
+禁通知时间使用电脑本地时间，每天生效。上例表示从 00:30 起至 08:00 前不发送 Bark；开始时刻包含在内，结束时刻不包含在内。也支持 `23:00` 至次日 `08:00` 这样的跨午夜区间。两个字段都设为 `""`（默认）则不启用；必须同时设置，且不能相同。禁通知期间仍会照常保存本地对话记录。
 
 ### 3. 功能开关
 
@@ -315,6 +319,8 @@ session_id
 | `max_body_length` | `1500` | Bark 正文最大字符数 |
 | `max_prompt_in_notification` | `500` | Bark 中问题最大字符数 |
 | `min_notification_duration_seconds` | `60.0` | 仅任务耗时严格超过该秒数时发送 Bark 通知；设为 `0` 表示不启用阈值 |
+| `notification_quiet_start_time` | `""` | 每日禁通知开始时间，电脑本地时间，格式 `HH:MM` |
+| `notification_quiet_end_time` | `""` | 每日禁通知结束时间，电脑本地时间，格式 `HH:MM` |
 | `conversation_title_max_length` | `36` | 本地对话名称最大长度 |
 | `lock_timeout_seconds` | `15.0` | 等待文件锁的最长时间 |
 | `lock_poll_interval_seconds` | `0.1` | 文件锁轮询间隔 |
